@@ -1,0 +1,39 @@
+#!/bin/bash
+NAME="$1"
+[ -d "$HOME/VirtualBox VMs/$NAME" ] && {
+	echo "VM $NAME already exists" 2>&1
+	exit 3
+}
+LAST_OCTET="$2"
+BASE_IP="192.168.56.200"
+BASEDIR=$(whereis "$0" | awk '{print $2}' | xargs dirname)
+[ -d "$BASEDIR" ] || {
+	echo "Make sure the script is in the PATH" 2>&1
+	exit 2
+}
+(( LAST_OCTET > 1 && LAST_OCTET < 256 )) || {
+	echo "Error: Last octet not in range 2-255" 2>&1
+	exit 1
+}
+
+VBoxManage clonevm las --register --options link --snapshot whatever --name="$NAME"
+VBoxManage startvm "$NAME" --type headless
+
+for i in {10..1}; do
+	echo $i
+	sleep 1
+done
+ssh-copy-id las@"$BASE_IP"
+
+ssh las@"$BASE_IP" "su --command=\"sed -i s/200/$LAST_OCTET/g /etc/network/interfaces && sed -i s/las/$NAME/g /etc/hostname && sed -i s/las/$NAME/g /etc/hosts && systemctl reboot\""
+if ! grep -q "192\.168\.56\.$LAST_OCTET" ~/.ssh/config
+then
+	cat << EOF >> ~/.ssh/config
+Host $NAME
+	User las
+	HostName 192.168.56.$LAST_OCTET
+	ForwardX11 yes
+EOF
+else
+	echo "An host name is already present for 192.168.56.$LAST_OCTET" 2>&1
+fi
